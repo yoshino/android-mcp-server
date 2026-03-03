@@ -1,0 +1,5 @@
+# Android MCP Server Configuration
+
+# Device configuration (optional)
+# device:
+#   name: "emulator-5554"  # Specify device serial number
