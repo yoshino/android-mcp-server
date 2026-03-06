@@ -430,6 +430,70 @@ RSpec.describe AdbDeviceManager do
       expect(result).to eq("No elements found in the current UI")
     end
 
+    it "includes scrollable container info in output" do
+      scrollable_xml = <<~XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <hierarchy rotation="0">
+          <node scrollable="true" class="android.widget.ScrollView" resource-id="com.example:id/scroll_view" bounds="[0,200][1080,1800]">
+            <node clickable="true" text="Field 1" content-desc="" bounds="[0,200][1080,300]" />
+            <node clickable="true" text="Field 2" content-desc="" bounds="[0,300][1080,400]" />
+          </node>
+        </hierarchy>
+      XML
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "uiautomator dump #{dump_path}")
+        .and_return(["UI hierchary dumped to: #{dump_path}\n", success_status])
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "cat #{dump_path}")
+        .and_return([scrollable_xml, success_status])
+
+      result = manager.get_uilayout
+      lines = result.split("\n")
+
+      expect(lines[0]).to include("Scrollable: true (vertical)")
+      expect(lines[0]).to include("Class: android.widget.ScrollView")
+      expect(lines[0]).to include("Resource-ID: com.example:id/scroll_view")
+      expect(lines[1]).to eq("---")
+      expect(lines[2]).to include("Text: Field 1")
+      expect(lines[3]).to include("Text: Field 2")
+    end
+
+    it "includes horizontal scrollable container info" do
+      scrollable_xml = <<~XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <hierarchy rotation="0">
+          <node scrollable="true" class="android.widget.HorizontalScrollView" resource-id="" bounds="[0,200][1080,400]">
+            <node clickable="true" text="Tab 1" content-desc="" bounds="[0,200][300,400]" />
+          </node>
+        </hierarchy>
+      XML
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "uiautomator dump #{dump_path}")
+        .and_return(["UI hierchary dumped to: #{dump_path}\n", success_status])
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "cat #{dump_path}")
+        .and_return([scrollable_xml, success_status])
+
+      result = manager.get_uilayout
+      lines = result.split("\n")
+
+      expect(lines[0]).to include("Scrollable: true (horizontal)")
+      expect(lines[0]).to include("Class: android.widget.HorizontalScrollView")
+    end
+
+    it "does not include scrollable header when no scrollable containers" do
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "uiautomator dump #{dump_path}")
+        .and_return(["UI hierchary dumped to: #{dump_path}\n", success_status])
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "cat #{dump_path}")
+        .and_return([ui_xml, success_status])
+
+      result = manager.get_uilayout
+      expect(result).not_to include("Scrollable:")
+      expect(result).not_to include("---")
+    end
+
     it "returns failure message when cat fails" do
       allow(Open3).to receive(:capture2)
         .with("adb", "-s", device_name, "shell", "uiautomator dump #{dump_path}")

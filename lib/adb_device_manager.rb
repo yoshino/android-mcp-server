@@ -147,6 +147,9 @@ class AdbDeviceManager
     doc = dump_ui_hierarchy
     return "Failed to dump UI layout" unless doc
 
+    # Detect scrollable containers
+    scroll_info = detect_scrollable_containers(doc)
+
     elements = []
     xpath = clickable_only ? "//node[@clickable='true']" : "//node"
     doc.xpath(xpath).each do |node|
@@ -185,7 +188,10 @@ class AdbDeviceManager
     if elements.empty?
       "No elements found in the current UI"
     else
-      elements.join("\n")
+      parts = []
+      parts << scroll_info << "---" unless scroll_info.empty?
+      parts << elements.join("\n")
+      parts.join("\n")
     end
   end
 
@@ -261,6 +267,37 @@ class AdbDeviceManager
   end
 
   private
+
+  def detect_scrollable_containers(doc)
+    containers = []
+    doc.xpath("//node[@scrollable='true']").each do |node|
+      bounds = node["bounds"].to_s
+      class_name = node["class"].to_s
+      resource_id = node["resource-id"].to_s
+
+      next unless bounds =~ /\[(\d+),(\d+)\]\[(\d+),(\d+)\]/
+
+      x1, y1, x2, y2 = $1.to_i, $2.to_i, $3.to_i, $4.to_i
+      width = x2 - x1
+      height = y2 - y1
+
+      direction = if height > width
+                    "vertical"
+                  elsif width > height
+                    "horizontal"
+                  else
+                    "both"
+                  end
+
+      info = "Scrollable: true (#{direction})"
+      info << ", Class: #{class_name}" unless class_name.empty?
+      info << ", Resource-ID: #{resource_id}" unless resource_id.empty?
+      info << ", Bounds: #{bounds}"
+      containers << info
+    end
+
+    containers.join("\n")
+  end
 
   def dump_ui_hierarchy
     dump_path = "/sdcard/window_dump.xml"

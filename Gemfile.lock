@@ -1,0 +1,42 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    addressable (2.8.8)
+      public_suffix (>= 2.0.2, < 8.0)
+    base64 (0.3.0)
+    bigdecimal (4.0.1)
+    diff-lcs (1.6.2)
+    json-schema (6.1.0)
+      addressable (~> 2.8)
+      bigdecimal (>= 3.1, < 5)
+    mcp (0.7.1)
+      json-schema (>= 4.1)
+    nokogiri (1.19.1-aarch64-linux-gnu)
+      racc (~> 1.4)
+    public_suffix (7.0.2)
+    racc (1.8.1)
+    rspec (3.13.2)
+      rspec-core (~> 3.13.0)
+      rspec-expectations (~> 3.13.0)
+      rspec-mocks (~> 3.13.0)
+    rspec-core (3.13.6)
+      rspec-support (~> 3.13.0)
+    rspec-expectations (3.13.5)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-mocks (3.13.7)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-support (3.13.7)
+
+PLATFORMS
+  aarch64-linux-gnu
+
+DEPENDENCIES
+  base64
+  mcp
+  nokogiri
+  rspec
+
+BUNDLED WITH
+   2.5.22
