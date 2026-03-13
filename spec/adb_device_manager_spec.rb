@@ -494,6 +494,77 @@ RSpec.describe AdbDeviceManager do
       expect(result).not_to include("---")
     end
 
+    it "groups elements by layer when multiple top-level windows exist" do
+      overlay_xml = <<~XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <hierarchy rotation="0">
+          <node class="android.widget.FrameLayout" bounds="[0,0][1080,2400]">
+            <node clickable="true" text="Main Title" content-desc="" bounds="[0,100][1080,200]" />
+            <node clickable="true" text="Menu Item" content-desc="" bounds="[0,300][1080,400]" />
+          </node>
+          <node class="android.widget.FrameLayout" bounds="[0,1200][1080,2400]">
+            <node clickable="true" text="Sheet Title" content-desc="" bounds="[0,1400][1080,1500]" />
+            <node clickable="true" text="Option A" content-desc="" bounds="[0,1500][1080,1600]" />
+          </node>
+        </hierarchy>
+      XML
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "uiautomator dump #{dump_path}")
+        .and_return(["UI hierchary dumped to: #{dump_path}\n", success_status])
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "cat #{dump_path}")
+        .and_return([overlay_xml, success_status])
+
+      result = manager.get_uilayout
+      expect(result).to include("[Layer: Background]")
+      expect(result).to include("[Layer: Overlay]")
+      expect(result).to include("Text: Main Title")
+      expect(result).to include("Text: Sheet Title")
+
+      # Background elements come before Overlay
+      bg_pos = result.index("[Layer: Background]")
+      ov_pos = result.index("[Layer: Overlay]")
+      expect(bg_pos).to be < ov_pos
+    end
+
+    it "detects overlay from BottomSheet class within single window" do
+      bottomsheet_xml = <<~XML
+        <?xml version="1.0" encoding="UTF-8"?>
+        <hierarchy rotation="0">
+          <node class="android.widget.FrameLayout" bounds="[0,0][1080,2400]">
+            <node clickable="true" text="Background Button" content-desc="" bounds="[0,100][1080,200]" />
+            <node class="com.google.android.material.bottomsheet.BottomSheetDialog" bounds="[0,1200][1080,2400]">
+              <node clickable="true" text="Sheet Option" content-desc="" bounds="[0,1400][1080,1500]" />
+            </node>
+          </node>
+        </hierarchy>
+      XML
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "uiautomator dump #{dump_path}")
+        .and_return(["UI hierchary dumped to: #{dump_path}\n", success_status])
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "cat #{dump_path}")
+        .and_return([bottomsheet_xml, success_status])
+
+      result = manager.get_uilayout
+      expect(result).to include("[Layer: Background]")
+      expect(result).to include("[Layer: Overlay]")
+      expect(result).to include("Text: Background Button")
+      expect(result).to include("Text: Sheet Option")
+    end
+
+    it "does not group layers when no overlay is present" do
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "uiautomator dump #{dump_path}")
+        .and_return(["UI hierchary dumped to: #{dump_path}\n", success_status])
+      allow(Open3).to receive(:capture2)
+        .with("adb", "-s", device_name, "shell", "cat #{dump_path}")
+        .and_return([ui_xml, success_status])
+
+      result = manager.get_uilayout
+      expect(result).not_to include("[Layer:")
+    end
+
     it "returns failure message when cat fails" do
       allow(Open3).to receive(:capture2)
         .with("adb", "-s", device_name, "shell", "uiautomator dump #{dump_path}")

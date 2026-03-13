@@ -150,48 +150,39 @@ class AdbDeviceManager
     # Detect scrollable containers
     scroll_info = detect_scrollable_containers(doc)
 
-    elements = []
-    xpath = clickable_only ? "//node[@clickable='true']" : "//node"
-    doc.xpath(xpath).each do |node|
-      text = node["text"].to_s
-      content_desc = node["content-desc"].to_s
-      bounds = node["bounds"].to_s
-      class_name = node["class"].to_s
-      checkable = node["checkable"] == "true"
-      checked = node["checked"] == "true"
+    # Detect overlay layers
+    layers = detect_layers(doc)
 
-      # Skip elements with no identifying information,
-      # but keep interactive widgets (Switch, Checkbox, SeekBar, etc.)
-      if text.empty? && content_desc.empty?
-        next unless checkable || class_name.match?(/Switch|Toggle|Checkbox|SeekBar|Slider/)
-      end
-
-      # Parse bounds "[x1,y1][x2,y2]" and calculate center
-      if bounds =~ /\[(\d+),(\d+)\]\[(\d+),(\d+)\]/
-        x1, y1, x2, y2 = $1.to_i, $2.to_i, $3.to_i, $4.to_i
-        center_x = (x1 + x2) / 2
-        center_y = (y1 + y2) / 2
-
-        element_info = []
-        element_info << "Text: #{text}" unless text.empty?
-        element_info << "Description: #{content_desc}" unless content_desc.empty?
-        element_info << "Class: #{class_name}" if checkable || class_name.match?(/Switch|Toggle|Checkbox|SeekBar|Slider/)
-        element_info << "Checkable: #{checkable}" if checkable
-        element_info << "Checked: #{checked}" if checkable
-        element_info << "Bounds: #{bounds}"
-        element_info << "Center: (#{center_x}, #{center_y})"
-
-        elements << element_info.join(", ")
-      end
-    end
-
-    if elements.empty?
-      "No elements found in the current UI"
-    else
+    if layers
+      # Multi-layer output
       parts = []
       parts << scroll_info << "---" unless scroll_info.empty?
-      parts << elements.join("\n")
+
+      has_elements = false
+      layers.each do |layer|
+        layer_elements = extract_elements(layer[:node], clickable_only: clickable_only)
+        next if layer_elements.empty?
+
+        has_elements = true
+        parts << "\n[Layer: #{layer[:name]}]"
+        parts << layer_elements.join("\n")
+      end
+
+      return "No elements found in the current UI" unless has_elements
+
       parts.join("\n")
+    else
+      # Single layer (no overlay detected)
+      elements = extract_elements(doc, clickable_only: clickable_only)
+
+      if elements.empty?
+        "No elements found in the current UI"
+      else
+        parts = []
+        parts << scroll_info << "---" unless scroll_info.empty?
+        parts << elements.join("\n")
+        parts.join("\n")
+      end
     end
   end
 
@@ -267,6 +258,84 @@ class AdbDeviceManager
   end
 
   private
+
+  OVERLAY_CLASS_PATTERNS = /BottomSheet|Dialog|PopupWindow|Popup|AlertDialog/.freeze
+
+  def extract_elements(scope, clickable_only: true)
+    elements = []
+    xpath = clickable_only ? ".//node[@clickable='true']" : ".//node"
+    scope.xpath(xpath).each do |node|
+      text = node["text"].to_s
+      content_desc = node["content-desc"].to_s
+      bounds = node["bounds"].to_s
+      class_name = node["class"].to_s
+      checkable = node["checkable"] == "true"
+      checked = node["checked"] == "true"
+
+      if text.empty? && content_desc.empty?
+        next unless checkable || class_name.match?(/Switch|Toggle|Checkbox|SeekBar|Slider/)
+      end
+
+      if bounds =~ /\[(\d+),(\d+)\]\[(\d+),(\d+)\]/
+        x1, y1, x2, y2 = $1.to_i, $2.to_i, $3.to_i, $4.to_i
+        center_x = (x1 + x2) / 2
+        center_y = (y1 + y2) / 2
+
+        element_info = []
+        element_info << "Text: #{text}" unless text.empty?
+        element_info << "Description: #{content_desc}" unless content_desc.empty?
+        element_info << "Class: #{class_name}" if checkable || class_name.match?(/Switch|Toggle|Checkbox|SeekBar|Slider/)
+        element_info << "Checkable: #{checkable}" if checkable
+        element_info << "Checked: #{checked}" if checkable
+        element_info << "Bounds: #{bounds}"
+        element_info << "Center: (#{center_x}, #{center_y})"
+
+        elements << element_info.join(", ")
+      end
+    end
+    elements
+  end
+
+  def detect_layers(doc)
+    hierarchy = doc.at_xpath("//hierarchy") || doc.root
+    return nil unless hierarchy
+
+    top_level_nodes = hierarchy.xpath("node")
+
+    # Case 1: Multiple top-level window containers (e.g. dialog over main activity)
+    # Only treat as multi-window if nodes are actual containers (have child nodes)
+    window_nodes = top_level_nodes.select { |n| n.xpath("node").length > 0 }
+    if window_nodes.length > 1
+      layers = window_nodes.each_with_index.map do |node, i|
+        name = i == window_nodes.length - 1 ? "Overlay" : "Background"
+        { name: name, node: node }
+      end
+      return layers
+    end
+
+    # Case 2: Single window but contains an overlay container (BottomSheet, Dialog, etc.)
+    container = window_nodes.first || top_level_nodes.first
+    return nil unless container
+
+    overlay_node = find_overlay_container(container)
+    return nil unless overlay_node
+
+    [
+      { name: "Background", node: container },
+      { name: "Overlay", node: overlay_node }
+    ]
+  end
+
+  def find_overlay_container(node)
+    node.xpath(".//node").each do |child|
+      class_name = child["class"].to_s
+      resource_id = child["resource-id"].to_s
+      if class_name.match?(OVERLAY_CLASS_PATTERNS) || resource_id.match?(OVERLAY_CLASS_PATTERNS)
+        return child
+      end
+    end
+    nil
+  end
 
   def detect_scrollable_containers(doc)
     containers = []
